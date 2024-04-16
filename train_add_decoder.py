@@ -22,6 +22,7 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+from decoder.dmodel import decoder
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -43,6 +44,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     if opt.include_feature:
         if not checkpoint:
             raise ValueError("checkpoint missing!!!!!")
+        img_decoder = decoder(encoder_hidden_dims=24, decoder_hidden_dims=512).cuda()
+        optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.00025)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         if len(model_params) == 12 and opt.include_feature:
@@ -58,7 +61,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    for iteration in range(first_iter, opt.iterations + 1):        
+    for iteration in range(first_iter, opt.iterations + 1):
         if network_gui.conn == None:
             network_gui.try_connect()
         while network_gui.conn != None:
@@ -76,6 +79,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         iter_start.record()
 
+        img_decoder.train()
         gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -92,11 +96,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             pipe.debug = True
         render_pkg = render(viewpoint_cam, gaussians, pipe, background, opt)
         image, language_feature, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["language_feature_image"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-        
+
         # Loss
         if opt.include_feature:
+            language_feature = img_decoder(language_feature)
             gt_language_feature, language_feature_mask = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level)
-            Ll1 = l1_loss(8*language_feature*language_feature_mask, 8*gt_language_feature[:24]*language_feature_mask)
+            Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)
             loss = Ll1
         else:
             gt_image = viewpoint_cam.original_image.cuda()
@@ -104,7 +109,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         # print((gt_language_feature*language_feature_mask).max())
         # print((language_feature[:24] * language_feature_mask).max())
+        optimizer_decoder.zero_grad()
         loss.backward()
+        optimizer_decoder.step()
         iter_end.record()
         with torch.no_grad():
             # Progress bar
@@ -143,6 +150,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(opt.include_feature), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+                torch.save(img_decoder, scene.model_path + "/512decoder_chkpnt" + str(iteration) + ".pth")
             
 def prepare_output_and_logger(args):    
     if not args.model_path:

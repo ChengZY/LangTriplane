@@ -20,6 +20,7 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
+from scene import triplane
 
 class GaussianModel:
 
@@ -122,7 +123,7 @@ class GaussianModel:
             denom,
             opt_dict, 
             self.spatial_lr_scale) = model_args
-            if not training_args.include_feature: # 如果是以原始gs为初始化来训练feature的话，就不需要restore optimizer
+            if not training_args.include_feature and mode == 'train': # 如果是以原始gs为初始化来训练feature的话，就不需要restore optimizer
                 self.optimizer.load_state_dict(opt_dict)
         
         if mode == 'train':
@@ -194,6 +195,8 @@ class GaussianModel:
         # self._language_feature = nn.Parameter(language_feature.requires_grad_(True))
         # 在从pointcloud初始化的时候是再训练原始gs的时候，这个时候不需要进行feature的初始化
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        #Initial Plane Feature plane_feature bs, plane: 3, features: 32, W 100, H 100#
+        self.plane_feature = nn.Parameter(torch.rand((1, 3, 12, 100, 100), dtype=torch.float32, device='cuda:0').requires_grad_(True))
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
@@ -201,11 +204,19 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         
         if training_args.include_feature:
+            # self.plane_axes = triplane.generate_planes().to(self.get_xyz.device)
+            # output = triplane.sample_from_planes(self.plane_axes, self.plane_feature, self.get_xyz).squeeze(0)
+            # plane_feature = torch.concat([output[0], output[1], output[2]], axis=1)
+            # self._language_feature = nn.Parameter(plane_feature.requires_grad_(True))
+            # language_feature = torch.zeros((self._xyz.shape[0], 36), device="cuda")
+            # self._language_feature = nn.Parameter(language_feature.requires_grad_(True))
+
             if self._language_feature is None or self._language_feature.shape[0] != self._xyz.shape[0]:
                 # 开始feature训练的时候，往模型中加入language feature参数
-                language_feature = torch.zeros((self._xyz.shape[0], 3), device="cuda")
+                # language_feature = torch.zeros((self._xyz.shape[0], 3), device="cuda")
+                language_feature = torch.zeros((self._xyz.shape[0], 24), device="cuda")
                 self._language_feature = nn.Parameter(language_feature.requires_grad_(True))
-                
+                # self._language_feature = nn.Parameter(plane_feature.requires_grad_(True))
             l = [
                 {'params': [self._language_feature], 'lr': training_args.language_feature_lr, "name": "language_feature"}, # TODO: training_args.language_feature_lr
             ]
@@ -227,6 +238,8 @@ class GaussianModel:
             assert self._language_feature is None, "在训练原始gs的时候language feature应该始终为None"
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+        # self.optimizer = torch.optim.Adam(l, lr=0.001, eps=1e-15)
+        # self.optimizer = torch.optim.Adam(l, lr=0.01, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,

@@ -12,6 +12,7 @@ import os
 import pickle
 import torch
 from torch import nn
+import torch.nn.functional as F
 import numpy as np
 from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
@@ -36,7 +37,8 @@ class Camera(nn.Module):
             print(f"[Warning] Custom device {data_device} failed, fallback to default cuda device" )
             self.data_device = torch.device("cuda")
 
-        self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
+        self.original_image = image.clamp(0.0, 1.0).to(self.data_device) # GS
+        # self.original_image = self.resize_tensor(image.clamp(0.0, 1.0).to(self.data_device) ,(256,256)) #GS
         self.image_width = self.original_image.shape[2]
         self.image_height = self.original_image.shape[1]
 
@@ -56,7 +58,8 @@ class Camera(nn.Module):
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
         self.camera_center = self.world_view_transform.inverse()[3, :3]
     def get_language_feature(self, language_feature_dir, feature_level):
-        language_feature_name = os.path.join(language_feature_dir, self.image_name)
+        # language_feature_name = os.path.join(language_feature_dir, self.image_name)
+        language_feature_name = os.path.join("./data/resize8/sofa/language_features_resize8/", self.image_name)
         seg_map = torch.from_numpy(np.load(language_feature_name + '_s.npy'))
         feature_map = torch.from_numpy(np.load(language_feature_name + '_f.npy'))
         
@@ -88,8 +91,39 @@ class Camera(nn.Module):
             raise ValueError("feature_level=", feature_level)
         # point_feature = torch.cat((point_feature2, point_feature3, point_feature4), dim=-1).to('cuda')
         point_feature = point_feature1.reshape(self.image_height, self.image_width, -1).permute(2, 0, 1)
-       
+        #  resize 256?
+        # point_feature = self.resize_tensor(point_feature,(256,256))
+        # mask = self.resize_tensor(point_feature,(256,256))
         return point_feature.cuda(), mask.cuda()
+
+    def resize_tensor(self, input_tensor, size):
+        """
+        Resize a PyTorch tensor similar to the behavior of cv2.resize in OpenCV.
+
+        Args:
+            input_tensor (torch.Tensor): Input tensor to be resized. Should be of shape (C, H, W) or (N, C, H, W).
+            size (tuple or int): Desired output size. If tuple, should be (height, width).
+            interpolation (int): Interpolation method to use. Default is cv2.INTER_LINEAR.
+
+        Returns:
+            torch.Tensor: Resized tensor.
+        """
+        # Determine input shape
+        if input_tensor.dtype == torch.bool:
+            input_tensor = input_tensor.float()
+        input_shape = input_tensor.shape
+        if len(input_shape) == 3:
+            # Add batch dimension
+            input_tensor = input_tensor.unsqueeze(0)
+        # Convert size to tuple if it's an integer
+        if isinstance(size, int):
+            size = (size, size)
+        # Perform interpolation
+        resized_tensor = F.interpolate(input_tensor, size=size, mode='bilinear', align_corners=False)
+        # If input was originally without batch dimension, remove it
+        if len(input_shape) == 3:
+            resized_tensor = resized_tensor.squeeze(0)
+        return resized_tensor
 
 class MiniCam:
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):

@@ -348,7 +348,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_path', type=str, required=True)
     parser.add_argument('--resolution', type=int, default=-1)
-    parser.add_argument('--sam_ckpt_path', type=str, default="ckpts/sam_vit_h_4b8939.pth")
+    parser.add_argument('--sam_ckpt_path', type=str, default="ckpt/sam_vit_h_4b8939.pth")
     args = parser.parse_args()
     torch.set_default_dtype(torch.float32)
 
@@ -392,13 +392,14 @@ if __name__ == '__main__':
             
         scale = float(global_down)
         resolution = (int( orig_w  / scale), int(orig_h / scale))
-        
+        # resolution = (int(orig_w / 8), int(orig_h / 8))
+
         image = cv2.resize(image, resolution)
         image = torch.from_numpy(image)
         img_list.append(image)
     images = [img_list[i].permute(2, 0, 1)[None, ...] for i in range(len(img_list))]
     imgs = torch.cat(images)
 
-    save_folder = os.path.join(dataset_path, 'language_features')
+    save_folder = os.path.join(dataset_path, 'language_features_resize8')
     os.makedirs(save_folder, exist_ok=True)
     create(imgs, data_list, save_folder)

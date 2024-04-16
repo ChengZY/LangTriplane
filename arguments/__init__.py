@@ -49,9 +49,9 @@ class ModelParams(ParamGroup):
         self.sh_degree = 3
         self._source_path = ""
         self._model_path = "" 
-        self._language_features_name = "language_features_dim3"
+        self._language_features_name = "language_features_1080p_dim3"
         self._images = "images"
-        self._resolution = -1
+        self._resolution = 1
         self._white_background = False
         self._feature_level = -1
         self.data_device = "cuda"
@@ -73,14 +73,14 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.iterations = 30_000
+        self.iterations = 30_000 #10000 for 512_8
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
         self.position_lr_max_steps = 30_000
         self.feature_lr = 0.0025
         self.opacity_lr = 0.05
-        self.language_feature_lr = 0.0025 # TODO: update
+        self.language_feature_lr = 0.00025 # TODO: update original code 0.0025
         self.include_feature = True # Set to False if train the original gs
         self.scaling_lr = 0.005
         self.rotation_lr = 0.001

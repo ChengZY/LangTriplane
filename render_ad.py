@@ -21,7 +21,7 @@ from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
 
-def render_set(model_path, source_path, name, iteration, views, gaussians, pipeline, background, args):
+def render_set(model_path, source_path, name, iteration, views, gaussians, dmodel, pipeline, background, args):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
     render_npy_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders_npy")
@@ -37,6 +37,7 @@ def render_set(model_path, source_path, name, iteration, views, gaussians, pipel
 
         if args.include_feature:
             rendering = output["language_feature_image"]
+            rendering = dmodel(rendering)
             # rendering = output["render"]
         else:
             # rendering = output["language_feature_image"]
@@ -53,8 +54,12 @@ def render_set(model_path, source_path, name, iteration, views, gaussians, pipel
         # np.save(os.path.join(render_npy_path, '{0:05d}'.format(idx) + ".npy"), language_feature_img)
         np.save(os.path.join(render_npy_path, '{0:05d}'.format(idx) + ".npy"),rendering.permute(1,2,0).cpu().numpy())
         np.save(os.path.join(gts_npy_path, '{0:05d}'.format(idx) + ".npy"),gt.permute(1,2,0).cpu().numpy())
-        torchvision.utils.save_image((1/gt[3:6].max()) * rendering[3:6], os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image((1/gt[3:6].max()) * gt[3:6], os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+        # torchvision.utils.save_image((1/gt[3:6].max()) * rendering[0:3], os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
+        # torchvision.utils.save_image((1/gt[3:6].max()) * gt[0:3], os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+        #512
+        torchvision.utils.save_image((1/gt[3*(idx):3*(idx+1)].max()) * rendering[3*(idx):3*(idx+1)], os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
+        torchvision.utils.save_image((1/gt[3*(idx):3*(idx+1)].max()) * gt[3*(idx):3*(idx+1)], os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+
         # render_vis = torch.stack([torch.mean(rendering[0:8], 0),torch.mean(rendering[8:16], 0),torch.mean(rendering[16:], 0)])
         # gt_vis     = torch.stack([torch.mean(gt[0:8], 0), torch.mean(gt[8:16], 0), torch.mean(gt[16:], 0)])
         # torchvision.utils.save_image( (1/gt_vis.max()) * render_vis, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
@@ -64,20 +69,23 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians, shuffle=False)
-        checkpoint = os.path.join(args.model_path, 'chkpnt60000.pth')
+        checkpoint = os.path.join(args.model_path, 'chkpnt30000.pth')
         # checkpoint = os.path.join("/home/zhongyao/dl/LangSplat/output/sofa_retrain_lan_3/", 'chkpnt30000.pth')
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, args, mode='test')
+
+        dcheckpoint = os.path.join(args.model_path, '512decoder_chkpnt30000.pth')
+        dmodel = torch.load(dcheckpoint)
         
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
              # render_set(dataset.model_path,dataset.source_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, args)
-             render_set(dataset.model_path, dataset.source_path, "train", scene.loaded_iter, scene.getTrainCameras(),gaussians, pipeline, background, args)
+             render_set(dataset.model_path, dataset.source_path, "train", scene.loaded_iter, scene.getTrainCameras(),gaussians, dmodel,pipeline, background, args)
 
         if not skip_test:
-             render_set(dataset.model_path, dataset.source_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, args)
+             render_set(dataset.model_path, dataset.source_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, dmodel,pipeline, background, args)
 
 if __name__ == "__main__":
     # Set up command line argument parser
