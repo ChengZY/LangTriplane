@@ -61,45 +61,24 @@ class GaussianModel:
         self.spatial_lr_scale = 0
         self.setup_functions()
 
-    def capture(self, include_feature=False, use_triplane = False):
+    def capture(self, include_feature=False):
         if include_feature:
-            if use_triplane:
-                assert self._language_feature is not None, "没有设置language feature"
-                assert self.plane_feature is not None, "没有设置plane feature"
-                return (
-                    self.active_sh_degree,
-                    self._xyz,
-                    self._features_dc,
-                    self._features_rest,
-                    self._scaling,
-                    self._rotation,
-                    self._opacity,
-                    self._language_feature,
-                    self.max_radii2D,
-                    self.xyz_gradient_accum,
-                    self.denom,
-                    self.optimizer.state_dict(),
-                    self.spatial_lr_scale,
-                    self.plane_axes,
-                    self.plane_feature,
-                )
-            else:
-                assert self._language_feature is not None, "没有设置language feature"
-                return (
-                    self.active_sh_degree,
-                    self._xyz,
-                    self._features_dc,
-                    self._features_rest,
-                    self._scaling,
-                    self._rotation,
-                    self._opacity,
-                    self._language_feature,
-                    self.max_radii2D,
-                    self.xyz_gradient_accum,
-                    self.denom,
-                    self.optimizer.state_dict(),
-                    self.spatial_lr_scale,
-                )
+            assert self._language_feature is not None, "没有设置language feature"
+            return (
+                self.active_sh_degree,
+                self._xyz,
+                self._features_dc,
+                self._features_rest,
+                self._scaling,
+                self._rotation,
+                self._opacity,
+                self._language_feature,
+                self.max_radii2D,
+                self.xyz_gradient_accum,
+                self.denom,
+                self.optimizer.state_dict(),
+                self.spatial_lr_scale,
+            )
         else:
             return (
                 self.active_sh_degree,
@@ -131,24 +110,6 @@ class GaussianModel:
             denom,
             opt_dict, 
             self.spatial_lr_scale) = model_args
-
-        elif len(model_args) == 15: # 这是一个不训练feature保存的ckpt
-            (self.active_sh_degree,
-            self._xyz,
-            self._features_dc,
-            self._features_rest,
-            self._scaling,
-            self._rotation,
-            self._opacity,
-            self._language_feature,
-            self.max_radii2D,
-            xyz_gradient_accum,
-            denom,
-            opt_dict,
-            self.spatial_lr_scale,
-            self.plane_axes,
-            self.plane_feature) = model_args
-
         elif len(model_args) == 12: # 这是一个不训练feature保存的ckpt
             (self.active_sh_degree, 
             self._xyz, 
@@ -194,19 +155,17 @@ class GaussianModel:
         return self.opacity_activation(self._opacity)
     
     @property
-    def get_language_feature(self):
+    def get_language_feature0(self):
         if self._language_feature is not None:
             return self._language_feature
         else:
             raise ValueError('没有设置language feature')
 
     @property
-    def get_language_feature_triplane(self):  # insert triplane
-        output = triplane.sample_from_planes(self.plane_axes, self.plane_feature, self.get_xyz).squeeze(0).permute(1, 2, 0)
-        # self._language_feature = torch.concat([output[0], output[1], output[2]], axis=1)
-        # output = output.permute(1, 2, 0)
-        self._language_feature = output.contiguous().view(output.shape[0], output.shape[1] * output.shape[2])
-        # self._language_feature = output.view(output.size(0), output.size(1) * output.size(2))
+    def get_language_feature(self):  # insert triplane
+        # self.plane_axes = triplane.generate_planes().to(self.get_xyz.device)
+        output = triplane.sample_from_planes(self.plane_axes, self.plane_feature, self.get_xyz).squeeze(0)
+        self._language_feature = torch.concat([output[0], output[1], output[2]], axis=1)
         return self._language_feature
     
     def get_covariance(self, scaling_modifier = 1):
@@ -243,9 +202,9 @@ class GaussianModel:
         # self._language_feature = nn.Parameter(language_feature.requires_grad_(True))
         # 在从pointcloud初始化的时候是再训练原始gs的时候，这个时候不需要进行feature的初始化
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
-        #Initial Plane Feature plane_feature bs, plane: 3, features: 8/12, W 100, H 100#
+        #Initial Plane Feature plane_feature bs, plane: 3, features: 32, W 100, H 100#
         # self.plane_feature = nn.Parameter(torch.rand((1, 3, 12, 100, 100), dtype=torch.float32, device='cuda:0').requires_grad_(True))
-        self.plane_feature = nn.Parameter(torch.zeros((1, 3, 8, 100, 100), dtype=torch.float32, device='cuda:0').requires_grad_(True))
+        self.plane_feature = nn.Parameter(torch.ones((1, 3, 8, 300, 300), dtype=torch.float32, device='cuda:0').requires_grad_(True))
         self.plane_axes = triplane.generate_planes().to(device="cuda")
 
     def training_setup(self, training_args):
@@ -254,20 +213,27 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         
         if training_args.include_feature:
-            if self._language_feature is None or self._language_feature.shape[0] != self._xyz.shape[0]:
-                # 开始feature训练的时候，往模型中加入language feature参数
-                if training_args.use_triplane:
-                    l = [
-                        {'params': [self.plane_feature], 'lr': training_args.language_feature_lr,
-                         "name": "language_feature"},  # TODO: training_args.language_feature_lr
-                    ]
-                else:
-                    language_feature = torch.zeros((self._xyz.shape[0], 24), device="cuda")
-                    self._language_feature = nn.Parameter(language_feature.requires_grad_(True))
-                    l = [
-                        {'params': [self._language_feature], 'lr': training_args.language_feature_lr, "name": "language_feature"}, # TODO: training_args.language_feature_lr
-                    ]
+            # output = triplane.sample_from_planes(self.plane_axes, self.plane_feature, self.get_xyz).squeeze(0)
+            # plane_feature = torch.concat([output[0], output[1], output[2]], axis=1)
+            # self._language_feature = nn.Parameter(plane_feature.requires_grad_(True))
+            # language_feature = torch.zeros((self._xyz.shape[0], 36), device="cuda")
+            # self._language_feature = nn.Parameter(language_feature.requires_grad_(True))
+            # self.plane_axes = triplane.generate_planes().to(self.get_xyz.device)
 
+            if self._language_feature is None or self._language_feature.shape[0] != self._xyz.shape[0]:
+                print('begin')
+                # self.plane_axes = triplane.generate_planes().to(self.get_xyz.device)
+                # 开始feature训练的时候，往模型中加入language feature参数
+                # language_feature = torch.zeros((self._xyz.shape[0], 3), device="cuda")
+                # language_feature = torch.zeros((self._xyz.shape[0], 24), device="cuda")
+                # self._language_feature = nn.Parameter(language_feature.requires_grad_(True))
+                # self._language_feature = nn.Parameter(plane_feature.requires_grad_(True))
+            # l = [
+            #     {'params': [self._language_feature], 'lr': training_args.language_feature_lr, "name": "language_feature"}, # TODO: training_args.language_feature_lr
+            # ]
+            l = [
+                {'params': [self.plane_feature], 'lr': training_args.language_feature_lr, "name": "language_feature"}, # TODO: training_args.language_feature_lr
+            ]
             self._xyz.requires_grad_(False)
             self._features_dc.requires_grad_(False)
             self._features_rest.requires_grad_(False)

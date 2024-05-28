@@ -87,8 +87,10 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         colors_precomp = override_color
 
     if opt.include_feature:
-        # project to tripplane
-        language_feature_precomp = pc.get_language_feature
+        if opt.use_triplane:
+            language_feature_precomp = pc.get_language_feature_triplane
+        else:
+            language_feature_precomp = pc.get_language_feature
         language_feature_precomp = language_feature_precomp/ (language_feature_precomp.norm(dim=-1, keepdim=True) + 1e-9)
         # language_feature_precomp = torch.sigmoid(language_feature_precomp)
     else:

@@ -57,8 +57,12 @@ def render_set(model_path, source_path, name, iteration, views, gaussians, dmode
         # torchvision.utils.save_image((1/gt[3:6].max()) * rendering[0:3], os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         # torchvision.utils.save_image((1/gt[3:6].max()) * gt[0:3], os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
         #512
-        torchvision.utils.save_image((1/gt[3*(idx):3*(idx+1)].max()) * rendering[3*(idx):3*(idx+1)], os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image((1/gt[3*(idx):3*(idx+1)].max()) * gt[3*(idx):3*(idx+1)], os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+        # display_channel = idx%7
+        display_channel = idx
+        # if display_channel >=23:
+        #     display_channel = idx - 2
+        torchvision.utils.save_image((1/gt[3*(display_channel):3*(display_channel+1)].max()) * rendering[3*(display_channel):3*(display_channel+1)], os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
+        torchvision.utils.save_image((1/gt[3*(display_channel):3*(display_channel+1)].max()) * gt[3*(display_channel):3*(display_channel+1)], os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
 
         # render_vis = torch.stack([torch.mean(rendering[0:8], 0),torch.mean(rendering[8:16], 0),torch.mean(rendering[16:], 0)])
         # gt_vis     = torch.stack([torch.mean(gt[0:8], 0), torch.mean(gt[8:16], 0), torch.mean(gt[16:], 0)])
@@ -98,6 +102,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--include_feature", action="store_true")
+    parser.add_argument("--use_triplane", action="store_true")
 
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)

@@ -352,55 +352,58 @@ if __name__ == '__main__':
     args = parser.parse_args()
     torch.set_default_dtype(torch.float32)
 
-    dataset_path = args.dataset_path
+    dataset_path_folder = args.dataset_path
     sam_ckpt_path = args.sam_ckpt_path
-    img_folder = os.path.join(dataset_path, 'images')
-    data_list = os.listdir(img_folder)
-    data_list.sort()
+    dataset_path = dataset_path_folder
 
-    model = OpenCLIPNetwork(OpenCLIPNetworkConfig)
-    sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt_path).to('cuda')
-    mask_generator = SamAutomaticMaskGenerator(
-        model=sam,
-        points_per_side=32,
-        pred_iou_thresh=0.7,
-        box_nms_thresh=0.7,
-        stability_score_thresh=0.85,
-        crop_n_layers=1,
-        crop_n_points_downscale_factor=1,
-        min_mask_region_area=100,
-    )
+    scene_names = [x for x in os.listdir(dataset_path_folder) if x!='label']
+    for scene_name in scene_names:
+        if scene_name != "label" and scene_name != "language_features":
+            print("begin to preprocess scene {}".format(scene_name))
+            img_folder = os.path.join(dataset_path_folder, scene_name,'images')
+            data_list = os.listdir(img_folder)
+            data_list.sort()
+            model = OpenCLIPNetwork(OpenCLIPNetworkConfig)
+            sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt_path).to('cuda')
+            mask_generator = SamAutomaticMaskGenerator(
+                model=sam,
+                points_per_side=32,
+                pred_iou_thresh=0.7,
+                box_nms_thresh=0.7,
+                stability_score_thresh=0.85,
+                crop_n_layers=1,
+                crop_n_points_downscale_factor=1,
+                min_mask_region_area=100,
+            )
 
-    img_list = []
-    WARNED = False
-    for data_path in data_list:
-        image_path = os.path.join(img_folder, data_path)
-        image = cv2.imread(image_path)
+            img_list = []
+            WARNED = False
+            for data_path in data_list:
+                image_path = os.path.join(img_folder, data_path)
+                image = cv2.imread(image_path)
 
-        orig_w, orig_h = image.shape[1], image.shape[0]
-        if args.resolution == -1:
-            if orig_h > 1080:
-                if not WARNED:
-                    print("[ INFO ] Encountered quite large input images (>1080P), rescaling to 1080P.\n "
-                        "If this is not desired, please explicitly specify '--resolution/-r' as 1")
-                    WARNED = True
-                global_down = orig_h / 1080
-            else:
-                global_down = 1
-        else:
-            global_down = orig_w / args.resolution
-            
-        scale = float(global_down)
-        resolution = (int( orig_w  / scale), int(orig_h / scale))
-        # resolution = (int(orig_w / 8), int(orig_h / 8))
+                orig_w, orig_h = image.shape[1], image.shape[0]
+                if args.resolution == -1:
+                    if orig_h > 1080:
+                        if not WARNED:
+                            print("[ INFO ] Encountered quite large input images (>1080P), rescaling to 1080P.\n "
+                                "If this is not desired, please explicitly specify '--resolution/-r' as 1")
+                            WARNED = True
+                        global_down = orig_h / 1080
+                    else:
+                        global_down = 1
+                else:
+                    global_down = orig_w / args.resolution
 
-        image = cv2.resize(image, resolution)
-        image = torch.from_numpy(image)
-        img_list.append(image)
-    images = [img_list[i].permute(2, 0, 1)[None, ...] for i in range(len(img_list))]
-    imgs = torch.cat(images)
+                scale = float(global_down)
+                # resolution = (int( orig_w  / scale), int(orig_h / scale))
 
-    # save_folder = os.path.join(dataset_path, 'language_features_resize8')
-    save_folder = os.path.join(dataset_path, 'language_features')
-    os.makedirs(save_folder, exist_ok=True)
-    create(imgs, data_list, save_folder)
+                # image = cv2.resize(image, resolution)
+                image = torch.from_numpy(image)
+                img_list.append(image)
+            images = [img_list[i].permute(2, 0, 1)[None, ...] for i in range(len(img_list))]
+            imgs = torch.cat(images)
+
+            save_folder = os.path.join(dataset_path, scene_name, 'language_features')
+            os.makedirs(save_folder, exist_ok=True)
+            create(imgs, data_list, save_folder)

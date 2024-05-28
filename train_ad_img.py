@@ -37,10 +37,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
 
-    testing_iterations = [x * 1000 for x in range(61)]  # 31
-    saving_iterations  = [x * 1000 for x in range(61)]  # 31
-    checkpoint_iterations = [x * 1000 for x in range(61)]  # 31
+    # testing_iterations = [x * 5000 for x in range(7)]  # 31
+    # saving_iterations  = [x * 5000 for x in range(7)]  # 31
+    # checkpoint_iterations = [x * 5000 for x in range(7)]  # 31
 
+    testing_iterations = [1000, 5000, 10000, 15000, 30000]
+    saving_iterations = [1000, 5000, 10000, 15000, 30000]  # 31
+    checkpoint_iterations = [1000, 5000, 10000, 15000, 30000]  # 31
+
+    opt.include_feature = False
     if opt.include_feature:
         if not checkpoint:
             raise ValueError("checkpoint missing!!!!!")
@@ -79,7 +84,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         iter_start.record()
 
-        img_decoder.train()
+        if opt.include_feature:
+            img_decoder.train()
         gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -109,9 +115,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         # print((gt_language_feature*language_feature_mask).max())
         # print((language_feature[:24] * language_feature_mask).max())
-        optimizer_decoder.zero_grad()
         loss.backward()
-        optimizer_decoder.step()
+        if opt.include_feature:
+            optimizer_decoder.step()
+            optimizer_decoder.zero_grad()
         iter_end.record()
         with torch.no_grad():
             # Progress bar
@@ -150,7 +157,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(opt.include_feature), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-                torch.save(img_decoder, scene.model_path + "/512decoder_chkpnt" + str(iteration) + ".pth")
+                if opt.include_feature:
+                    torch.save(img_decoder, scene.model_path + "/512decoder_chkpnt" + str(iteration) + ".pth")
             
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -223,7 +231,7 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
-    parser.add_argument('--ip', type=str, default="127.0.0.1")
+    parser.add_argument('--ip', type=str, default="127.0.0.2")
     parser.add_argument('--port', type=int, default=55556)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
@@ -233,6 +241,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[1,7000, 30000])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     args = parser.parse_args(sys.argv[1:])
+    args.include_feature = False
     args.save_iterations.append(args.iterations)
     print(args)
     args.model_path = args.model_path + f"_{str(args.feature_level)}"
