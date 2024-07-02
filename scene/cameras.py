@@ -57,7 +57,7 @@ class Camera(nn.Module):
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda()
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
         self.camera_center = self.world_view_transform.inverse()[3, :3]
-    def get_language_feature(self, language_feature_dir, feature_level):
+    def get_language_feature(self, language_feature_dir, feature_level, retain_seg = False):
         language_feature_name = os.path.join(language_feature_dir, self.image_name)
         # language_feature_name = os.path.join("./data/resize8/sofa/language_features_resize8/", self.image_name)
         seg_map = torch.from_numpy(np.load(language_feature_name + '_s.npy'))
@@ -89,12 +89,14 @@ class Camera(nn.Module):
             mask = mask[3:4].reshape(1, self.image_height, self.image_width)
         else:
             raise ValueError("feature_level=", feature_level)
-        # point_feature = torch.cat((point_feature2, point_feature3, point_feature4), dim=-1).to('cuda')
         point_feature = point_feature1.reshape(self.image_height, self.image_width, -1).permute(2, 0, 1)
         #  resize 256?
         # point_feature = self.resize_tensor(point_feature,(256,256))
         # mask = self.resize_tensor(point_feature,(256,256))
-        return point_feature.cuda(), mask.cuda()
+        if retain_seg:
+            return point_feature.cuda(), mask.cuda(), seg_map[feature_level:feature_level+1].cuda()
+        else:
+            return point_feature.cuda(), mask.cuda()
 
     def resize_tensor(self, input_tensor, size):
         """

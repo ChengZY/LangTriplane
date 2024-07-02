@@ -43,7 +43,7 @@ def eval_iou(sem_map,
         mask_lvl = np.zeros((n_head, h, w))
         for i in range(n_head):
             # NOTE 加滤波结果后的激活值图中找最大值点
-            scale = 30 #30
+            scale = 15 #30
             kernel = np.ones((scale, scale)) / (scale ** 2)
             np_relev = valid_map[i][k].cpu().numpy()
             avg_filtered = cv2.filter2D(np_relev, -1, kernel) #cv2.filter2D 用于检测图像中的特征，如边缘、纹理等
@@ -78,32 +78,44 @@ def eval_iou(sem_map,
             mask_gt = cv2.imread(os.path.join(annotation_path, clip_model.positives[k]+'.png')).astype(np.uint8) #read
             # mask_gt = cv2.resize(mask_gt, (mask_pred.shape[0],mask_pred.shape[1]))[:,:,0]
             mask_gt = cv2.resize(mask_gt, (mask_pred.shape[1], mask_pred.shape[0]))[:, :, 0]
-            # calculate iou
-            intersection = np.sum(np.logical_and(mask_gt, mask_pred))
-            union = np.sum(np.logical_or(mask_gt, mask_pred))
-            iou = np.sum(intersection) / np.sum(union)
-            iou_lvl[i] = iou
+
 
             save_path = image_name / f'{clip_model.positives[k]}_lvl_{i}.png'
             vis_mask_save(mask_pred, save_path)
 
-        score_lvl = torch.zeros((n_head,), device=valid_map.device)
-        for i in range(n_head):
-            score = valid_map[i, k].max()
-            score_lvl[i] = score
-        chosen_lvl = torch.argmax(score_lvl)
+        # score_lvl = torch.zeros((n_head,), device=valid_map.device)
+        # for i in range(n_head):
+        #     score = valid_map[i, k].max()
+        #     score_lvl[i] = score
+        # chosen_lvl = torch.argmax(score_lvl)
+        #
+        # chosen_iou_list.append(iou_lvl[chosen_lvl])
+        # chosen_lvl_list.append(chosen_lvl.cpu().numpy())
+        #
+        # # save for visulsization
+        # save_path = image_name / f'chosen_{clip_model.positives[k]}.png'
+        # vis_mask_save(mask_lvl[chosen_lvl], save_path)
 
-        chosen_iou_list.append(iou_lvl[chosen_lvl])
-        chosen_lvl_list.append(chosen_lvl.cpu().numpy())
+        # calculate iou
+        mask_sum = np.sum(mask_lvl, axis=0)
+        mask_suma = mask_sum >= 3
+        mask_suma = mask_suma.astype(int)
 
-        # save for visulsization
-        save_path = image_name / f'chosen_{clip_model.positives[k]}.png'
-        vis_mask_save(mask_lvl[chosen_lvl], save_path)
+        intersection = np.sum(np.logical_and(mask_gt, mask_suma))
+        union = np.sum(np.logical_or(mask_gt, mask_suma))
+        iou = np.sum(intersection) / np.sum(union)
+        chosen_iou_list.append(iou)
 
     return chosen_iou_list, chosen_lvl_list
 
 if __name__ == '__main__':
     parser = ArgumentParser(description="prompt any label")
+    # parser.add_argument("--image_dir", type=str, default='../data/3d_ovs_8/lawn/images/', help="path to image")
+    # parser.add_argument('--annotation_dir', type=str, default="../data/3d_ovs_8/lawn/segmentations/")
+    # parser.add_argument('--feat_dir', type=str, default="../output/3d_ovs_8/lawn/retrain_lang_8_0/train/ours_None/renders_npy", help="path to predicted results")
+    # parser.add_argument("--output_dir", type=str, default="../output/3d_ovs_8/lawn/eval", help="path to save the results")
+    # parser.add_argument("--mask_thresh", type=float, default=0.4)
+    # parser.add_argument("--scene", type=float, default=0.4)
 
     parser.add_argument("--image_dir", type=str, default='../data/3d_ovs_8/', help="path to image")
     parser.add_argument('--annotation_dir', type=str, default="../data/3d_ovs_8/")
@@ -143,8 +155,8 @@ if __name__ == '__main__':
                 '../output/3d_ovs_8/{}/retrain_lang_8_tp_3/train/ours_None/renders_npy'.format(args.scene),
                 ]
     # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), *image_shape, 3), dtype=np.float32)
-    # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), 384, 512, 512), dtype=np.float32)       #sofa 384, 512
-    compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), 378, 504, 512), dtype=np.float32)  # lawn/lawn 378, 504
+    compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), 384, 512, 512), dtype=np.float32)       #sofa 384, 512
+    # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), 378, 504, 512), dtype=np.float32)  # lawn/lawn 378, 504
     for i in range(len(feat_dir)):
         feat_paths_lvl = sorted(glob.glob(os.path.join(feat_dir[i], '*.npy')),
                                 key=lambda file_name: int(os.path.basename(file_name).split(".npy")[0]))

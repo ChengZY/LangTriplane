@@ -23,7 +23,8 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
-from decoder.dmodel import decoder
+from decoder.dmodel import decoder_render as decoder
+from decoder.dmodel import init_weights_to_one
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -41,13 +42,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # testing_iterations = [x * 1000 for x in range(61)]  # 31
     testing_iterations = [1,2,3,4,5,10,50] + [x * 100 for x in range(301)]  # 31
     saving_iterations  = [1000,5000,10000,15000,30000]  # 31
-    checkpoint_iterations = [15000,30000]  # 31
+    checkpoint_iterations = [1000,15000,30000]  # 31
 
     if opt.include_feature:
         if not checkpoint:
             raise ValueError("checkpoint missing!!!!!")
         img_decoder = decoder(encoder_hidden_dims=24, decoder_hidden_dims=512).cuda()
-        # optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0025) #0.00025
+        optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0005)  # 0.0005
+        scheduler = lr_scheduler.StepLR(optimizer_decoder, step_size=100, gamma=0.9)
+        # scheduler = lr_scheduler.MultiStepLR(optimizer_decoder, milestones=[x * 1000 for x in range(31)], gamma=0.1)
+        # optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0025, weight_decay=1e-3) #0.00025
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         if len(model_params) == 12 and opt.include_feature:
@@ -80,14 +84,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 network_gui.conn = None
 
         iter_start.record()
-        # if opt.include_feature:
-        #     img_decoder.train()
+        if opt.include_feature:
+            img_decoder.train()
         gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
-
 
         # Pick a random Camera
         if not viewpoint_stack:
@@ -103,9 +106,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Loss
         if opt.include_feature:
             gt_language_feature, language_feature_mask = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level)
-            # language_feature = img_decoder(language_feature)
-            # Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)
-            Ll1 = l1_loss(6*language_feature * language_feature_mask,6*gt_language_feature[:24] * language_feature_mask)
+            language_feature = img_decoder(language_feature,image)
+            Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)
             loss = Ll1
         else:
             gt_image = viewpoint_cam.original_image.cuda()
@@ -114,9 +116,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # print((gt_language_feature*language_feature_mask).max())
         # print((language_feature[:24] * language_feature_mask).max())
         loss.backward()
-        # if opt.include_feature:
-        #     optimizer_decoder.step()
-        #     optimizer_decoder.zero_grad()
+        if opt.include_feature:
+            optimizer_decoder.step()
+            scheduler.step()
+            optimizer_decoder.zero_grad()
         iter_end.record()
         with torch.no_grad():
             # Progress bar
@@ -128,8 +131,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, opt.include_feature, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, \
-                            scene, render, (pipe, background, opt),dataset.lf_path,dataset.feature_level)
+            training_report(tb_writer, opt.include_feature,iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, opt),\
+                            img_decoder, dataset.lf_path,dataset.feature_level)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -153,8 +156,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
 
-            if iteration % 100 == 0 and opt.include_feature:
-                gaussians.optimizer.param_groups[0]['lr'] = gaussians.optimizer.param_groups[0]['lr'] * 0.8
+            if iteration % 500 == 0 and opt.include_feature:
+                # gaussians.optimizer.param_groups[0]['lr'] = gaussians.optimizer.param_groups[0]['lr'] * 0.8
+                gaussians.optimizer.param_groups[0]['lr'] = gaussians.optimizer.param_groups[0]['lr'] * 0
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
@@ -184,7 +188,7 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, include_feature ,iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, lf_path= None, feature_level = 0):
+def training_report(tb_writer, include_feature, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, img_decoder, lf_path= None, feature_level = 0,):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
@@ -203,17 +207,17 @@ def training_report(tb_writer, include_feature ,iteration, Ll1, loss, l1_loss, e
                 psnr_test = 0.0
                 for idx, viewpoint in enumerate(config['cameras']):
                     if include_feature:
-                        image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"]*6, 0.0, 1.0)[21:24]
-                        gt_language_feature, language_feature_mask = viewpoint.get_language_feature(language_feature_dir=lf_path, feature_level=feature_level)
-                        gt_image = torch.clamp(gt_language_feature.to("cuda")* 6, 0.0, 1.0)[21:24]
+                        no_decode_img = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"] *10, 0.0, 1.0)[21:24]
+                        image = torch.clamp(img_decoder(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"],\
+                                                        renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"]) *10, 0.0, 1.0)[21:24]
                         # gt_image, mask = \
                         #     viewpoint.get_language_feature(language_feature_dir="/home/zhongyao/dl/LangSplat/data/preprocessed_dataset/sofa/language_features_backup", feature_level=3)
-                        # gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
+                        gt_language_feature, language_feature_mask = viewpoint.get_language_feature(
+                            language_feature_dir=lf_path, feature_level=feature_level)
+                        gt_image = torch.clamp(gt_language_feature.to("cuda") * 10, 0.0, 1.0)[21:24]
                     else:
                         image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
                         gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
-                    # image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
-                    # gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
                     #language feature
                     # image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"], 0.0, 1.0)
                     # gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
@@ -221,8 +225,9 @@ def training_report(tb_writer, include_feature ,iteration, Ll1, loss, l1_loss, e
                     #     viewpoint.get_language_feature(language_feature_dir="/home/zhongyao/dl/LangSplat/data/preprocessed_dataset/sofa/language_features_backup", feature_level=3)
                     if tb_writer and (idx < 5):
                         tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None], global_step=iteration)
+                        tb_writer.add_images(config['name'] + "_view_{}/render_noad".format(viewpoint.image_name),
+                                             no_decode_img[None], global_step=iteration)
                         if iteration == testing_iterations[0]:
-                            # tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name), gt_image[None], global_step=iteration)
                             tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name), gt_image[None], global_step=iteration)
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
@@ -244,7 +249,7 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
-    parser.add_argument('--ip', type=str, default="127.0.0.2")
+    parser.add_argument('--ip', type=str, default="127.0.0.1")
     parser.add_argument('--port', type=int, default=55556)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)

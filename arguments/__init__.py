@@ -73,14 +73,17 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.iterations = 30_000 #10000 for 512_8
+        # self.iterations = 30_000 #10000 for 512_8
+        self.iterations = 5_000  # 10000 for 512_8
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
         self.position_lr_max_steps = 30_000
         self.feature_lr = 0.0025
         self.opacity_lr = 0.05
-        self.language_feature_lr = 0.00025 # TODO: update original code 0.0025
+        self.language_feature_lr = 0.0025 # TODO: update original code 0.0025
+        self.language_feature_lr = 0.00000000025  # TODO: update original code 0.00000000025 decoder = 0.0005
+        # self.language_feature_lr = 0.000000000001  # TODO: update original code 0.0025
         self.include_feature = False # Set to False if train the original gs
         self.use_triplane = False
         self.scaling_lr = 0.005

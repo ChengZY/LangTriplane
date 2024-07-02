@@ -245,7 +245,9 @@ class GaussianModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
         #Initial Plane Feature plane_feature bs, plane: 3, features: 8/12, W 100, H 100#
         # self.plane_feature = nn.Parameter(torch.rand((1, 3, 12, 100, 100), dtype=torch.float32, device='cuda:0').requires_grad_(True))
-        self.plane_feature = nn.Parameter(torch.zeros((1, 3, 8, 100, 100), dtype=torch.float32, device='cuda:0').requires_grad_(True))
+        # self.plane_feature = nn.Parameter(torch.zeros((1, 3, 8, 100, 100), dtype=torch.float32, device='cuda:0').requires_grad_(True))
+        self.plane_feature = nn.Parameter(
+            torch.zeros((1, 3, 8, 100, 100), dtype=torch.float32, device='cuda:0').requires_grad_(True))
         self.plane_axes = triplane.generate_planes().to(device="cuda")
 
     def training_setup(self, training_args):
