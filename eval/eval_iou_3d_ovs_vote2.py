@@ -121,9 +121,8 @@ if __name__ == '__main__':
     parser.add_argument('--annotation_dir', type=str, default="../data/3d_ovs_8/")
     parser.add_argument('--feat_dir', type=str, default="../output/3d_ovs_8/", help="path to predicted results")
     parser.add_argument("--output_dir", type=str, default="../output/3d_ovs_8/", help="path to save the results")
-    parser.add_argument("--mask_thresh", type=float, default=0.4)
+    parser.add_argument("--mask_thresh", type=float, default=0.6)
     parser.add_argument("--scene", type=str, default='bench')
-    parser.add_argument("--exp", type=str, default='retrain_lang_8_tp_render_img2')
 
 
     args = parser.parse_args()
@@ -132,12 +131,6 @@ if __name__ == '__main__':
     annotation_path= os.path.join(args.annotation_dir,args.scene,'segmentations')
     output_path = os.path.join(args.output_dir,args.scene,'eval_tp')  #args.output_dir
     print("begin to eval scene {}".format(args.scene))
-
-    w = 378
-    h = 504
-    if scene == 'sofa':
-        w = 384
-        h = 512
 
     colormap_options = colormaps.ColormapOptions(
         colormap="turbo",
@@ -156,21 +149,14 @@ if __name__ == '__main__':
     #             '../output/3d_ovs_8/{}/retrain_lang_8_2/train/ours_None/renders_npy'.format(args.scene), \
     #             '../output/3d_ovs_8/{}/retrain_lang_8_3/train/ours_None/renders_npy'.format(args.scene),
     #             ]
-    feat_dir = ['{}/{}/{}_0/train/ours_None/renders_npy'.format(args.feat_dir,args.scene, args.exp), \
-                '{}/{}/{}_1/train/ours_None/renders_npy'.format(args.feat_dir,args.scene, args.exp), \
-                '{}/{}/{}_2/train/ours_None/renders_npy'.format(args.feat_dir,args.scene, args.exp), \
-                '{}/{}/{}_3/train/ours_None/renders_npy'.format(args.feat_dir,args.scene, args.exp),
+    feat_dir = ['../output/3d_ovs_8/{}/retrain_lang_8_tp_render_img_0/train/ours_None/renders_npy'.format(args.scene), \
+                '../output/3d_ovs_8/{}/retrain_lang_8_tp_render_img_1/train/ours_None/renders_npy'.format(args.scene), \
+                '../output/3d_ovs_8/{}/retrain_lang_8_tp_render_img_2/train/ours_None/renders_npy'.format(args.scene), \
+                '../output/3d_ovs_8/{}/retrain_lang_8_tp_render_img_3/train/ours_None/renders_npy'.format(args.scene),
                 ]
-    # feat_dir = ['../output/3d_ovs_8/{}/retrain_lang_8_tp_render_img_0/train/ours_None/renders_npy'.format(args.scene), \
-    #             '../output/3d_ovs_8/{}/retrain_lang_8_tp_render_img_1/train/ours_None/renders_npy'.format(args.scene), \
-    #             '../output/3d_ovs_8/{}/retrain_lang_8_tp_render_img_2/train/ours_None/renders_npy'.format(args.scene), \
-    #             '../output/3d_ovs_8/{}/retrain_lang_8_tp_render_img_3/train/ours_None/renders_npy'.format(args.scene),
-    #             ]
     # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), *image_shape, 3), dtype=np.float32)
     # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), 384, 512, 512), dtype=np.float32)       #sofa 384, 512
-    # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), 378, 504, 512), dtype=np.float32)  # lawn/lawn 378, 504
-    compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), w, h, 512),
-                                    dtype=np.float32)  # lawn/lawn 378, 504
+    compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), 378, 504, 512), dtype=np.float32)  # lawn/lawn 378, 504
     for i in range(len(feat_dir)):
         feat_paths_lvl = sorted(glob.glob(os.path.join(feat_dir[i], '*.npy')),
                                 key=lambda file_name: int(os.path.basename(file_name).split(".npy")[0]))

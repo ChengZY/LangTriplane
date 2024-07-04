@@ -106,15 +106,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Loss
         if opt.include_feature:
             gt_language_feature, language_feature_mask, seg_map = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level,retain_seg= True)
-
             # Ll1_24 = l1_loss(language_feature * language_feature_mask, gt_language_feature[:24] * language_feature_mask)
             # language_feature = img_decoder(language_feature)
             language_feature = img_decoder(language_feature)
             con_loss = get_conloss(language_feature, seg_map)
             Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)
             # loss = Ll1
-            loss = Ll1 + 0.01 * con_loss *  sigmoid_rampup(iteration//60, 60)
-            con_loss1= 0.01 * con_loss * sigmoid_rampup(iteration//60, 60)
+            loss = Ll1 + 0.002 * con_loss *  sigmoid_rampup(iteration//60, 60)
+            con_loss1= 0.002 * con_loss * sigmoid_rampup(iteration//60, 60)
         else:
             gt_image = viewpoint_cam.original_image.cuda()
             Ll1 = l1_loss(image, gt_image)

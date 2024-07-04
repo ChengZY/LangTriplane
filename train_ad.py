@@ -41,7 +41,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # testing_iterations = [x * 1000 for x in range(61)]  # 31
     testing_iterations = [1,2,3,4,5,10,50] + [x * 100 for x in range(301)]  # 31
     saving_iterations  = [1000,5000,10000,15000,30000]  # 31
-    checkpoint_iterations = [15000,30000]  # 31
+    checkpoint_iterations = [5000, 15000,30000]  # 31
 
     if opt.include_feature:
         if not checkpoint:
@@ -205,19 +205,14 @@ def training_report(tb_writer, include_feature, iteration, Ll1, loss, l1_loss, e
                     if include_feature:
                         no_decode_img = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"] *10, 0.0, 1.0)[21:24]
                         image = torch.clamp(img_decoder(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"]) *10, 0.0, 1.0)[21:24]
-                        # gt_image, mask = \
-                        #     viewpoint.get_language_feature(language_feature_dir="/home/zhongyao/dl/LangSplat/data/preprocessed_dataset/sofa/language_features_backup", feature_level=3)
+
                         gt_language_feature, language_feature_mask = viewpoint.get_language_feature(
                             language_feature_dir=lf_path, feature_level=feature_level)
                         gt_image = torch.clamp(gt_language_feature.to("cuda") * 10, 0.0, 1.0)[21:24]
                     else:
                         image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
                         gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
-                    #language feature
-                    # image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"], 0.0, 1.0)
-                    # gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
-                    # gt_image, mask = \
-                    #     viewpoint.get_language_feature(language_feature_dir="/home/zhongyao/dl/LangSplat/data/preprocessed_dataset/sofa/language_features_backup", feature_level=3)
+
                     if tb_writer and (idx < 5):
                         tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None], global_step=iteration)
                         tb_writer.add_images(config['name'] + "_view_{}/render_noad".format(viewpoint.image_name),

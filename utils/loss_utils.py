@@ -63,11 +63,11 @@ def get_conloss(language_feature, seg_map):
             mask = seg_map == value
             indices = torch.nonzero(mask, as_tuple=False)
             point_feature_1 = language_feature[:, indices[indices.shape[0] // 2, :][1], indices[indices.shape[0] // 2, :][2]]
-            point_feature_1 = point_feature_1.reshape(1, 24)
+            point_feature_1 = point_feature_1.reshape(1, 512)
             point_feature_2 = language_feature[:, indices[0, :][1], indices[0, :][2]]
-            point_feature_2 = point_feature_2.reshape(1, 24)
+            point_feature_2 = point_feature_2.reshape(1, 512)
             point_feature_3 = language_feature[:, indices[-1, :][1], indices[-1, :][2]]
-            point_feature_3 = point_feature_3.reshape(1, 24)
+            point_feature_3 = point_feature_3.reshape(1, 512)
             labels.append(value)
             point_features_1.append(point_feature_1)
             point_features_2.append(point_feature_2)

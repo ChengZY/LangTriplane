@@ -73,12 +73,12 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians, shuffle=False)
-        checkpoint = os.path.join(args.model_path, 'chkpnt1000.pth')
+        checkpoint = os.path.join(args.model_path, 'chkpnt5000.pth')
         # checkpoint = os.path.join("/home/zhongyao/dl/LangSplat/output/sofa_retrain_lan_3/", 'chkpnt30000.pth')
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, args, mode='test')
 
-        dcheckpoint = os.path.join(args.model_path, '512decoder_chkpnt1000.pth')
+        dcheckpoint = os.path.join(args.model_path, '512decoder_chkpnt5000.pth')
         dmodel = torch.load(dcheckpoint)
         
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]

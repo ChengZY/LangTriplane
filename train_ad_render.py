@@ -42,14 +42,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # testing_iterations = [x * 1000 for x in range(61)]  # 31
     testing_iterations = [1,2,3,4,5,10,50] + [x * 100 for x in range(301)]  # 31
     saving_iterations  = [1000,5000,10000,15000,30000]  # 31
-    checkpoint_iterations = [1000,15000,30000]  # 31
+    checkpoint_iterations = [1000,5000, 15000,30000]  # 31
 
     if opt.include_feature:
         if not checkpoint:
             raise ValueError("checkpoint missing!!!!!")
-        img_decoder = decoder(encoder_hidden_dims=24, decoder_hidden_dims=512).cuda()
-        optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0005)  # 0.0005
-        scheduler = lr_scheduler.StepLR(optimizer_decoder, step_size=100, gamma=0.9)
+        img_decoder = decoder(encoder_hidden_dims=27, decoder_hidden_dims=512).cuda()
+        optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0025)  # 0.0005
+        scheduler = lr_scheduler.StepLR(optimizer_decoder, step_size=5000, gamma=0)
         # scheduler = lr_scheduler.MultiStepLR(optimizer_decoder, milestones=[x * 1000 for x in range(31)], gamma=0.1)
         # optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0025, weight_decay=1e-3) #0.00025
     if checkpoint:

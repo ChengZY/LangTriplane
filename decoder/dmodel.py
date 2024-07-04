@@ -16,7 +16,7 @@ class decoder(nn.Module):
         return x
 
 class decoder_render(nn.Module):
-    def __init__(self, encoder_hidden_dims=27, decoder_hidden_dims=512): # 24 channel 3 image 1 edge
+    def __init__(self, encoder_hidden_dims=27, decoder_hidden_dims=512): # 24 channel 3 image (1 edge to adjust)
         super(decoder_render, self).__init__()
         self.deconder1 = torch.nn.Conv2d(in_channels=encoder_hidden_dims, out_channels=128, kernel_size=(1, 1), stride=(1, 1))
         self.deconder2 = torch.nn.Conv2d(in_channels=128, out_channels=256,
