@@ -49,7 +49,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         img_decoder = decoder(encoder_hidden_dims=24, decoder_hidden_dims=512).cuda()
         img_decoder.apply(init_weights_to_one)
         optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0025)  # 0.00025
-        scheduler = lr_scheduler.StepLR(optimizer_decoder, step_size=500, gamma=0.1)
+        # scheduler = lr_scheduler.StepLR(optimizer_decoder, step_size=500, gamma=0.1)
         # scheduler = lr_scheduler.MultiStepLR(optimizer_decoder, milestones=[x * 1000 for x in range(31)], gamma=0.1)
         # optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0025, weight_decay=1e-3) #0.00025
     if checkpoint:
@@ -118,7 +118,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss.backward()
         if opt.include_feature:
             optimizer_decoder.step()
-            scheduler.step()
+            # scheduler.step()
             optimizer_decoder.zero_grad()
         iter_end.record()
         with torch.no_grad():
@@ -203,12 +203,13 @@ def training_report(tb_writer, include_feature, iteration, Ll1, loss, l1_loss, e
                 psnr_test = 0.0
                 for idx, viewpoint in enumerate(config['cameras']):
                     if include_feature:
-                        no_decode_img = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"] *10, 0.0, 1.0)[21:24]
-                        image = torch.clamp(img_decoder(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"]) *10, 0.0, 1.0)[21:24]
-
                         gt_language_feature, language_feature_mask = viewpoint.get_language_feature(
                             language_feature_dir=lf_path, feature_level=feature_level)
-                        gt_image = torch.clamp(gt_language_feature.to("cuda") * 10, 0.0, 1.0)[21:24]
+                        gt_image = torch.clamp(gt_language_feature.to("cuda"), 0.0, 1.0)[30:33]
+                        ratio = 1 / gt_image.max()
+                        gt_image = ratio * gt_image
+                        no_decode_img = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"] *ratio, 0.0, 1.0)[0:3]
+                        image = torch.clamp(img_decoder(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"]) *ratio, 0.0, 1.0)[30:33]
                     else:
                         image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
                         gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)

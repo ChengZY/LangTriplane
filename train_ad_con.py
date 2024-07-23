@@ -13,7 +13,8 @@ import os
 import torch
 import torch.optim.lr_scheduler as lr_scheduler
 from random import randint
-from utils.loss_utils import l1_loss, ssim, get_sim, get_conloss, sigmoid_rampup
+from utils.loss_utils import l1_loss, ssim, get_sim, sigmoid_rampup
+from utils.loss_utils import get_conloss as get_conloss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -24,6 +25,7 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from decoder.dmodel import decoder, init_weights_to_one
+# from decoder.dmodel import decoder_render as decoder
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -42,6 +44,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     testing_iterations = [1,2,3,4,5,10,50] + [x * 100 for x in range(301)]  # 31
     saving_iterations  = [1000,5000,10000,15000,30000]  # 31
     checkpoint_iterations = [1000,5000, 15000,30000]  # 31
+    con_start = 2000
 
     if opt.include_feature:
         if not checkpoint:
@@ -49,7 +52,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         img_decoder = decoder(encoder_hidden_dims=24, decoder_hidden_dims=512).cuda()
         img_decoder.apply(init_weights_to_one)
         optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0025)  # 0.00025
-        scheduler = lr_scheduler.StepLR(optimizer_decoder, step_size=500, gamma=0.1)
+        # scheduler = lr_scheduler.StepLR(optimizer_decoder, step_size=500, gamma=0.1)
         # scheduler = lr_scheduler.MultiStepLR(optimizer_decoder, milestones=[x * 1000 for x in range(31)], gamma=0.1)
         # optimizer_decoder = torch.optim.Adam(img_decoder.parameters(), lr=0.0025, weight_decay=1e-3) #0.00025
     if checkpoint:
@@ -107,13 +110,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if opt.include_feature:
             gt_language_feature, language_feature_mask, seg_map = viewpoint_cam.get_language_feature(language_feature_dir=dataset.lf_path, feature_level=dataset.feature_level,retain_seg= True)
             # Ll1_24 = l1_loss(language_feature * language_feature_mask, gt_language_feature[:24] * language_feature_mask)
-            # language_feature = img_decoder(language_feature)
+            # language_feature = img_decoder(language_feature, image)
+            # con_loss = get_conloss(language_feature, seg_map)
             language_feature = img_decoder(language_feature)
             con_loss = get_conloss(language_feature, seg_map)
+            '''con_loss ~ 0.01 l1'''
             Ll1 = l1_loss(language_feature*language_feature_mask, gt_language_feature*language_feature_mask)
-            # loss = Ll1
-            loss = Ll1 + 0.002 * con_loss *  sigmoid_rampup(iteration//60, 60)
-            con_loss1= 0.002 * con_loss * sigmoid_rampup(iteration//60, 60)
+            if iteration < con_start:
+                loss = Ll1
+                # loss = con_loss
+                con_loss1 = 0.001 * con_loss * sigmoid_rampup((iteration-con_start)//60, 60)
+            else:
+                loss = Ll1 + 0.001 * con_loss * sigmoid_rampup((iteration-con_start)//60, 60)
+                # loss = con_loss
+                con_loss1= 0.001 * con_loss * sigmoid_rampup((iteration-con_start)//60, 60)
         else:
             gt_image = viewpoint_cam.original_image.cuda()
             Ll1 = l1_loss(image, gt_image)
@@ -123,7 +133,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss.backward()
         if opt.include_feature:
             optimizer_decoder.step()
-            scheduler.step()
+            # scheduler.step()
             optimizer_decoder.zero_grad()
         iter_end.record()
         with torch.no_grad():
@@ -160,6 +170,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
+
+            # if iteration % 500 == 0 and opt.include_feature:
+            #     # gaussians.optimizer.param_groups[0]['lr'] = gaussians.optimizer.param_groups[0]['lr'] * 0.8
+            #     gaussians.optimizer.param_groups[0]['lr'] = gaussians.optimizer.param_groups[0]['lr'] * 0
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
@@ -210,13 +224,16 @@ def training_report(tb_writer, include_feature, iteration, Ll1, loss, l1_loss, c
                 psnr_test = 0.0
                 for idx, viewpoint in enumerate(config['cameras']):
                     if include_feature:
-                        no_decode_img = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"], 0.0, 1.0)[21:24]
-                        image = torch.clamp(img_decoder(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"]) * 10, 0.0, 1.0)[21:24]
+                        gt_language_feature, language_feature_mask = viewpoint.get_language_feature(language_feature_dir=lf_path, feature_level=feature_level)
+                        gt_image = torch.clamp(gt_language_feature.to("cuda"), 0.0, 1.0)[30:33]
+                        ratio = 1/gt_image.max()
+                        gt_image = ratio*gt_image
+
+                        no_decode_img = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"]*ratio, 0.0, 1.0)[0:3]
+                        image = torch.clamp(img_decoder(renderFunc(viewpoint, scene.gaussians, *renderArgs)["language_feature_image"])*ratio, 0.0, 1.0)[30:33]
                         # gt_image, mask = \
                         #     viewpoint.get_language_feature(language_feature_dir="/home/zhongyao/dl/LangSplat/data/preprocessed_dataset/sofa/language_features_backup", feature_level=3)
-                        gt_language_feature, language_feature_mask = viewpoint.get_language_feature(
-                            language_feature_dir=lf_path, feature_level=feature_level)
-                        gt_image = torch.clamp(gt_language_feature.to("cuda")* 10, 0.0, 1.0)[21:24]
+
                     else:
                         image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
                         gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)

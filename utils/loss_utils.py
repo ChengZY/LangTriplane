@@ -15,6 +15,7 @@ from torch.autograd import Variable
 from math import exp
 from .supconloss import SupConLoss
 import numpy as np
+import random
 
 def sigmoid_rampup(current, rampup_length):
     """Exponential rampup from https://arxiv.org/abs/1610.02242"""
@@ -24,7 +25,6 @@ def sigmoid_rampup(current, rampup_length):
         current = np.clip(current, 0.0, rampup_length)
         phase = 1.0 - current / rampup_length
         return float(np.exp(-5.0 * phase * phase))
-
 
 def linear_rampup(current, rampup_length):
     """Linear rampup"""
@@ -49,7 +49,7 @@ def conloss(x1, x2, label, margin: float = 1.0):
     loss = torch.mean(loss)
     return loss
 
-def get_conloss(language_feature, seg_map):
+def get_conloss0(language_feature, seg_map):
     language_feature[torch.isnan(language_feature)] = 0
     unique_values, counts = torch.unique(seg_map.flatten(), return_counts=True)
     # most_frequent_value = unique_values[torch.argmax(counts)]
@@ -85,6 +85,166 @@ def get_conloss(language_feature, seg_map):
     # print("con loss:", loss)
     return loss
 
+def get_conloss0_random(language_feature, seg_map):
+    language_feature[torch.isnan(language_feature)] = 0
+    unique_values, counts = torch.unique(seg_map.flatten(), return_counts=True)
+    # most_frequent_value = unique_values[torch.argmax(counts)]
+    point_features_1 = []
+    point_features_2 = []
+    point_features_3 = []
+    labels = []
+
+    for value in unique_values:
+        if value !=-1:
+            mask = seg_map == value
+            indices = torch.nonzero(mask, as_tuple=False)
+            random_numbers = torch.randint(0, indices.shape[0], (3,))
+            point_feature_1 = language_feature[:, indices[random_numbers[0], :][1], indices[random_numbers[0], :][2]]
+            point_feature_1 = point_feature_1.reshape(1, 512)
+            point_feature_2 = language_feature[:, indices[random_numbers[1], :][1], indices[random_numbers[1], :][2]]
+            point_feature_2 = point_feature_2.reshape(1, 512)
+            point_feature_3 = language_feature[:, indices[random_numbers[2], :][1], indices[random_numbers[2], :][2]]
+            point_feature_3 = point_feature_3.reshape(1, 512)
+            labels.append(value)
+            point_features_1.append(point_feature_1)
+            point_features_2.append(point_feature_2)
+            point_features_3.append(point_feature_3)
+
+    criterion = SupConLoss(temperature=0.7)
+
+    point_features_1 = torch.stack(point_features_1, dim=0)
+    point_features_2 = torch.stack(point_features_2, dim=0)
+    point_features_3 = torch.stack(point_features_3, dim=0)
+    point_features = torch.cat([point_features_1, point_features_2, point_features_3], dim=1)
+
+    label1 = torch.tensor(labels)
+    loss = criterion(point_features,label1)
+    # print("con loss:", loss)
+    return loss
+
+def get_conloss1(language_feature, seg_map):
+    language_feature[torch.isnan(language_feature)] = 0
+    unique_values, counts = torch.unique(seg_map.flatten(), return_counts=True)
+    # most_frequent_value = unique_values[torch.argmax(counts)]
+    point_features_1 = []
+    point_features_2 = []
+    point_features_3 = []
+    labels = []
+    for value in unique_values:
+        if value !=-1:
+            mask = seg_map == value
+            indices = torch.nonzero(mask, as_tuple=False)
+            point_feature_1 = language_feature[:, indices[indices.shape[0] // 2, :][1], indices[indices.shape[0] // 2, :][2]]
+            point_feature_1 = point_feature_1.reshape(1, 512)
+            point_feature_2 = language_feature[:, indices[0, :][1], indices[0, :][2]]
+            point_feature_2 = point_feature_2.reshape(1, 512)
+            point_feature_3 = language_feature[:, indices[-1, :][1], indices[-1, :][2]]
+            point_feature_3 = point_feature_3.reshape(1, 512)
+            labels.append(value)
+            point_features_1.append(point_feature_1)
+            point_features_2.append(point_feature_2)
+            point_features_3.append(point_feature_3)
+
+    criterion = SupConLoss(temperature=0.07)
+
+    point_features_1 = torch.stack(point_features_1, dim=0)
+    point_features_2 = torch.stack(point_features_2, dim=0)
+    point_features_3 = torch.stack(point_features_3, dim=0)
+    point_features = torch.cat([point_features_1, point_features_2, point_features_3], dim=0)
+
+    label1 = torch.tensor(labels)
+    label1 = torch.cat([label1, label1, label1], dim=0)
+    loss = criterion(point_features,label1)
+    # print("con loss:", loss)
+    return loss
+
+
+def get_conloss(language_feature, seg_map):
+    # language_feature[torch.isnan(language_feature)] = 0
+    language_feature = language_feature.clone()
+    language_feature[torch.isnan(language_feature)] = 0
+    unique_values, counts = torch.unique(seg_map.flatten(), return_counts=True)
+    # most_frequent_value = unique_values[torch.argmax(counts)]
+    point_features_1 = []
+    point_features_2 = []
+    point_features_3 = []
+    labels = []
+
+    language_feature_flattened = language_feature.view(language_feature.shape[0], -1)
+    seg_map_flatten = seg_map.view(1, -1)
+
+    ind = []
+    criterion = SupConLoss(temperature=0.07)
+    con_loss = 0
+    for value in unique_values:
+        # if value != -1:
+        mask = seg_map_flatten == value
+        indices = torch.nonzero(mask, as_tuple=False)
+        ind.append(indices)
+        cls_feature = language_feature_flattened[:, indices[:, 1]]
+
+        point_feature_1 = cls_feature.mean(dim=1).reshape(1, language_feature.shape[0])
+        if indices.shape[0] > 1:
+            point_feature_2 = cls_feature[:, :indices.shape[0] // 2].mean(dim=1).reshape(1, language_feature.shape[0])
+            point_feature_3 = cls_feature[:, indices.shape[0] // 2:].mean(dim=1).reshape(1, language_feature.shape[0])
+        else:
+            point_feature_2 = point_feature_1
+            point_feature_3 = point_feature_1
+        labels.append(value)
+        point_features_1.append(point_feature_1)
+        point_features_2.append(point_feature_2)
+        point_features_3.append(point_feature_3)
+        # loss = criterion(torch.stack([point_feature_1, point_feature_2, point_feature_3], dim=0),torch.tensor([value]*3))
+        # con_loss = con_loss + loss
+
+    # con_loss = con_loss/len(unique_values)
+    point_features_1 = torch.stack(point_features_1, dim=0)
+    point_features_2 = torch.stack(point_features_2, dim=0)
+    point_features_3 = torch.stack(point_features_3, dim=0)
+    point_features = torch.cat([point_features_1, point_features_2, point_features_3], dim=1)
+
+    label1 = torch.tensor(labels)
+    loss = criterion(point_features,label1)
+    # print("con loss:", loss)
+    return loss
+
+# def get_conloss(language_feature, seg_map):
+#     language_feature[torch.isnan(language_feature)] = 0
+#     unique_values, counts = torch.unique(seg_map.flatten(), return_counts=True)
+#     # most_frequent_value = unique_values[torch.argmax(counts)]
+#     point_features_1 = []
+#     point_features_2 = []
+#     point_features_3 = []
+#     labels = []
+#
+#     language_feature_flattened = language_feature.view(512, -1)
+#     seg_map_flatten = seg_map.view(1, -1)
+#
+#     for value in unique_values:
+#         if value !=-1:
+#             mask = seg_map_flatten == value
+#             indices = torch.nonzero(mask, as_tuple=False)
+#             a = indices[:, 1]
+#             cls_feature = language_feature_flattened[:, indices[:, 1]]
+#
+#             point_feature_1 = cls_feature.mean(dim=1)
+#             point_feature_2 = cls_feature[:,:cls_feature.shape[1]//2].mean(dim=1)
+#             point_feature_3 = cls_feature[:,:cls_feature.shape[1]//2:].mean(dim=1)
+#             labels.append(value)
+#             point_features_1.append(point_feature_1)
+#             point_features_2.append(point_feature_2)
+#             point_features_3.append(point_feature_3)
+#     criterion = SupConLoss(temperature=0.07)
+#     point_features_1 = torch.stack(point_features_1, dim=0)
+#     point_features_2 = torch.stack(point_features_2, dim=0)
+#     point_features_3 = torch.stack(point_features_3, dim=0)
+#     point_features = torch.cat([point_features_1, point_features_2, point_features_3], dim=0)
+#
+#     label1 = torch.tensor(labels)
+#     label1 = torch.cat([label1, label1, label1], dim=0)
+#     loss = criterion(point_features,label1)
+#     # print("con loss:", loss)
+#     return loss
 
 def get_sim(language_feature, seg_map):
     language_feature[torch.isnan(language_feature)] = 0

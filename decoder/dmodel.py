@@ -49,6 +49,44 @@ class decoder_render(nn.Module):
 
         return language_feature_image
 
+class TransformerEncoder(nn.Module):
+    def __init__(self, emb_size, num_heads, depth, forward_expansion):
+        super(TransformerEncoder, self).__init__()
+        self.layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=emb_size,
+                nhead=num_heads,
+                dim_feedforward=forward_expansion * emb_size
+            ) for _ in range(depth)
+        ])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+class decoder_tramsformer(nn.Module):
+    def __init__(self, encoder_hidden_dims=24, decoder_hidden_dims=512):
+        super(decoder_tramsformer, self).__init__()
+        self.transformer_encoder = TransformerEncoder(emb_size = encoder_hidden_dims, num_heads=2, depth=2, forward_expansion=2)
+        self.deconder0 = torch.nn.Conv2d(in_channels=encoder_hidden_dims, out_channels=encoder_hidden_dims, kernel_size=(1, 1),
+                                         stride=(1, 1))
+        self.deconder1 = torch.nn.Conv2d(in_channels=encoder_hidden_dims, out_channels=128, kernel_size=(1, 1), stride=(1, 1))
+        self.deconder2 = torch.nn.Conv2d(in_channels=128, out_channels=256,
+                                         kernel_size=(1, 1), stride=(1, 1))
+        self.deconder3 = torch.nn.Conv2d(in_channels=256, out_channels=decoder_hidden_dims,
+                                         kernel_size=(1, 1), stride=(1, 1))
+
+    def forward(self, x):
+        x = x.permute(2, 1, 0)
+        x = self.transformer_encoder(x)
+        x = x.permute(2, 1, 0)
+        x0 = self.deconder0(x)
+        x = self.deconder1(x0)
+        x = self.deconder2(x)
+        x = self.deconder3(x)
+        return x,x0
+
+
 def init_weights_to_one(m):
     if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
         nn.init.constant_(m.weight, 0.00001)
